@@ -29,6 +29,16 @@ def arr(x):
     return np.atleast_1d(np.asarray(x, dtype=float))
 
 
+T_MIN, T_MAX = -20.0, 80.0  # plausible cell temperatures (deg C); outside = sensor glitch
+
+
+def valid_temp_mean(temperature):
+    """Mean temperature, ignoring physically impossible sensor readings."""
+    t = arr(temperature)
+    t = t[(t > T_MIN) & (t < T_MAX)]
+    return float(np.mean(t)) if len(t) else np.nan
+
+
 def amp_hours(current, time):
     """Charge moved in a step, in Ah (absolute value, so charge and discharge both count)."""
     i, t = arr(current), arr(time)
@@ -65,7 +75,7 @@ def battery_features(path):
                 "interval_mean_temp": float(np.mean(iv_temp)) if iv_temp else np.nan,
                 "interval_max_temp": float(np.max(iv_temp)) if iv_temp else np.nan,
                 "interval_mean_dis_current": float(np.mean(iv_dis_i)) if iv_dis_i else np.nan,
-                "ref_mean_temp": float(np.mean(arr(st["temperature"]))),
+                "ref_mean_temp": valid_temp_mean(st["temperature"]),
             })
             ref_idx += 1
             iv_ah, iv_temp, iv_dis_i, iv_steps = 0.0, [], [], 0
@@ -75,7 +85,9 @@ def battery_features(path):
 
         if "random walk" in comment:
             iv_ah += step_ah
-            iv_temp.append(float(np.mean(arr(st["temperature"]))))
+            step_temp = valid_temp_mean(st["temperature"])
+            if not np.isnan(step_temp):
+                iv_temp.append(step_temp)
             if st["type"] == "D":
                 iv_steps += 1
                 iv_dis_i.append(float(np.mean(np.abs(arr(st["current"])))))
@@ -125,6 +137,9 @@ def main():
         "missing_temp": df["interval_mean_temp"].isna().groupby(df["group"]).sum(),
     })
     print(summary)
+    print("temperature range after filtering: "
+          f"{df['interval_mean_temp'].min():.1f} to {df['interval_mean_temp'].max():.1f} C (interval), "
+          f"{df['ref_mean_temp'].min():.1f} to {df['ref_mean_temp'].max():.1f} C (reference)")
 
 
 if __name__ == "__main__":
